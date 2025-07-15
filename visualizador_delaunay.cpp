@@ -19,7 +19,8 @@
 
 struct Point3D {
     float x, y, z;
-    Point3D(float x = 0, float y = 0, float z = 0) : x(x), y(y), z(z) {}
+    int id;
+    Point3D(float x = 0, float y = 0, float z = 0, int id = -1) : x(x), y(y), z(z), id(id) {}
     
     bool operator<(const Point3D& other) const {
         if (x != other.x) return x < other.x;
@@ -658,13 +659,20 @@ public:
     }
     
     void generateMeshFromPoints() {
-        if (points.size() < 3) {
-            std::cerr << "Se necesitan al menos 4 puntos para generar malla" << std::endl;
+        if (points.size() < 4) {
+            std::cerr << "Se necesitan al menos 4 puntos para generar malla 3D" << std::endl;
             return;
         }
         
         vertices.clear();
         indices.clear();
+        
+        // Usar triangulación de Delaunay
+        triangulator.setPoints(points);
+        triangulator.triangulate();
+        
+        // Extraer triángulos de superficie
+        triangles = triangulator.extractSurfaceTriangles();
         
         // Crear vértices con colores basados en altura
         for (const auto& point : points) {
@@ -675,74 +683,75 @@ public:
             vertices.push_back(Vertex(position, normal, color));
         }
         
-        // Generar triangulación simple basada en capas Z
-        std::cout << "Generando malla..." << std::endl;
+        // //GENERACION TRIANGULAR
+
+        // // Generar índices a partir de los triángulos de superficie
+        // for (const auto& triangle : triangles) {
+        //     indices.push_back(triangle.v1);
+        //     indices.push_back(triangle.v2);
+        //     indices.push_back(triangle.v3);
+        // }
         
-        // Agrupar puntos por capa Z
-        std::map<int, std::vector<int>> layers;
-        for (int i = 0; i < points.size(); i++) {
-            int layer = static_cast<int>(std::round(points[i].z));
-            layers[layer].push_back(i);
-        }
+        // // Calcular normales para cada vértice
+        // std::vector<glm::vec3> vertexNormals(vertices.size(), glm::vec3(0.0f));
+        // std::vector<int> normalCount(vertices.size(), 0);
         
-        // // Crear triángulos entre capas adyacentes
-        // auto layerIt = layers.begin();
-        // auto nextLayerIt = std::next(layerIt);
-        
-        // while (nextLayerIt != layers.end()) {
-        //     const auto& currentLayer = layerIt->second;
-        //     const auto& nextLayer = nextLayerIt->second;
+        // // Calcular normales por triángulo y acumular en los vértices
+        // for (size_t i = 0; i < indices.size(); i += 3) {
+        //     unsigned int i1 = indices[i];
+        //     unsigned int i2 = indices[i + 1];
+        //     unsigned int i3 = indices[i + 2];
             
-        //     // Triangulación simple entre capas
-        //     for (int i = 0; i < currentLayer.size() && i < nextLayer.size(); i++) {
-        //         int idx1 = currentLayer[i];
-        //         int idx2 = nextLayer[i];
-                
-        //         // Buscar puntos cercanos para formar triángulos
-        //         for (int j = i + 1; j < currentLayer.size() && j < nextLayer.size(); j++) {
-        //             int idx3 = currentLayer[j];
-        //             int idx4 = nextLayer[j];
-                    
-        //             // Crear dos triángulos
-        //             indices.push_back(idx1);
-        //             indices.push_back(idx2);
-        //             indices.push_back(idx3);
-                    
-        //             indices.push_back(idx2);
-        //             indices.push_back(idx4);
-        //             indices.push_back(idx3);
-        //         }
+        //     // Verificar que los índices sean válidos
+        //     if (i1 >= vertices.size() || i2 >= vertices.size() || i3 >= vertices.size()) {
+        //         std::cerr << "Índice inválido en triángulo: " << i1 << ", " << i2 << ", " << i3 << std::endl;
+        //         continue;
         //     }
             
-        //     ++layerIt;
-        //     ++nextLayerIt;
-        // }
-        
-        // // Calcular normales
-        // std::vector<glm::vec3> vertexNormals(vertices.size(), glm::vec3(0.0f));
-        
-        // for (int i = 0; i < indices.size(); i += 3) {
-        //     int idx1 = indices[i];
-        //     int idx2 = indices[i + 1];
-        //     int idx3 = indices[i + 2];
+        //     // Calcular normal del triángulo
+        //     glm::vec3 v1 = vertices[i1].position;
+        //     glm::vec3 v2 = vertices[i2].position;
+        //     glm::vec3 v3 = vertices[i3].position;
             
-        //     glm::vec3 normal = calculateNormal(
-        //         Point3D(vertices[idx1].position.x, vertices[idx1].position.y, vertices[idx1].position.z),
-        //         Point3D(vertices[idx2].position.x, vertices[idx2].position.y, vertices[idx2].position.z),
-        //         Point3D(vertices[idx3].position.x, vertices[idx3].position.y, vertices[idx3].position.z)
-        //     );
+        //     glm::vec3 edge1 = v2 - v1;
+        //     glm::vec3 edge2 = v3 - v1;
+        //     glm::vec3 faceNormal = glm::normalize(glm::cross(edge1, edge2));
             
-        //     vertexNormals[idx1] += normal;
-        //     vertexNormals[idx2] += normal;
-        //     vertexNormals[idx3] += normal;
+        //     // Verificar que la normal sea válida
+        //     if (glm::length(faceNormal) > 0.1f) {
+        //         // Acumular normal en cada vértice del triángulo
+        //         vertexNormals[i1] += faceNormal;
+        //         vertexNormals[i2] += faceNormal;
+        //         vertexNormals[i3] += faceNormal;
+                
+        //         normalCount[i1]++;
+        //         normalCount[i2]++;
+        //         normalCount[i3]++;
+        //     }
+        // }
+
+        // // Normalizar las normales de los vértices
+        // for (size_t i = 0; i < vertices.size(); i++) {
+        //     if (normalCount[i] > 0) {
+        //         vertexNormals[i] /= static_cast<float>(normalCount[i]);
+        //         vertices[i].normal = glm::normalize(vertexNormals[i]);
+        //     } else {
+        //         // Si no hay normal calculada, usar una normal por defecto
+        //         vertices[i].normal = glm::vec3(0.0f, 0.0f, 1.0f);
+        //     }
         // }
         
-        // // Normalizar las normales
-        // for (int i = 0; i < vertexNormals.size(); i++) {
-        //     vertices[i].normal = glm::normalize(vertexNormals[i]);
+        // // Validar que tengamos datos válidos
+        // if (indices.empty()) {
+        //     std::cerr << "No se generaron triángulos válidos" << std::endl;
+        //     return;
         // }
         
-        std::cout << "Malla generada: " << vertices.size() << " vértices, " << indices.size() / 3 << " triángulos" << std::endl;
+        // Mostrar estadísticas
+        std::cout << "Malla generada: " << vertices.size() << " vértices, " 
+                << indices.size() / 3 << " triángulos" << std::endl;
+        std::cout << "Bounds: [" << minBounds.x << ", " << minBounds.y << ", " << minBounds.z << "] a ["
+                << maxBounds.x << ", " << maxBounds.y << ", " << maxBounds.z << "]" << std::endl;
         
         // Subir datos a GPU
         uploadMeshToGPU();
@@ -845,7 +854,7 @@ public:
     
     void printControls() {
         std::cout << "\n=== CONTROLES ===" << std::endl;
-        std::cout << "Mouse: Rotar cámara" << std::endl;
+        std::cout << "Clic izquierdo + arrastrar: Rotar cámara" << std::endl;
         std::cout << "Flechas: Mover cámara" << std::endl;
         std::cout << "Espacio: Subir" << std::endl;
         std::cout << "Shift: Bajar" << std::endl;
