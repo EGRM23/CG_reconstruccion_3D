@@ -57,21 +57,21 @@ private:
     
     // Camera and view variables
     glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 100.0f);
-    glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
+    glm::vec3 cameraFront = glm::vec3(0.0f,> 0.0f, -1.0f);
     glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
     float cameraSpeed = 50.0f;
     float mouseSensitivity = 0.1f;
     
     // Mouse and keyboard
     bool firstMouse = true;
-     bool leftMousePressed = false;
+    bool leftMousePressed = false;
     float lastX = 400.0f;
     float lastY = 300.0f;
     float yaw = -90.0f;
     float pitch = 0.0f;
     
     // Rendering options
-    bool wireframe = false;
+    bool wireframe = true;
     bool showPoints = true;
     bool showMesh = false;
     

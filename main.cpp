@@ -6,9 +6,31 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
-struct Point3D {
-    double x, y, z;
-    Point3D(double x = 0, double y = 0, double z = 0) : x(x), y(y), z(z) {}
+class Point3D {
+public:
+    float x, y, z;
+    
+    Point3D(float x = 0, float y = 0, float z = 0) : x(x), y(y), z(z) {}
+    
+    Point3D operator-(const Point3D& other) const {
+        return Point3D(x - other.x, y - other.y, z - other.z);
+    }
+    
+    Point3D cross(const Point3D& other) const {
+        return Point3D(
+            y * other.z - z * other.y,
+            z * other.x - x * other.z,
+            x * other.y - y * other.x
+        );
+    }
+    
+    Point3D normalized() const {
+        float len = std::sqrt(x*x + y*y + z*z);
+        if (len > 0) {
+            return Point3D(x/len, y/len, z/len);
+        }
+        return *this;
+    }
 };
 
 class MultiTiffEdgeExtractor {
