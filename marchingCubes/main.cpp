@@ -9,9 +9,12 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <omp.h>  // Necesario para las directivas de OpenMP
+#include <dirent.h> // Para leer el directorio
 
 using namespace std;
 
+int GRID_RESOLUTION = 100;  // Valor por defecto
+int THREADS_TO_USE = -1;    // -1 = automático (mitad de los núcleos)
 
 struct Point3D {
     float x, y, z;
@@ -545,7 +548,7 @@ private:
     Point3D minBounds, maxBounds;
     
 public:
-    MarchingCubes(float gridSize = 0.1f, int resolution = 100) 
+    MarchingCubes(float gridSize = 0.1f, int resolution = GRID_RESOLUTION) 
         : gridSize(gridSize), gridResolution(resolution) {}
     
     // Cargar nube de puntos desde archivo .xyz
@@ -587,11 +590,41 @@ public:
             maxBounds.y = std::max(maxBounds.y, point.y);
             maxBounds.z = std::max(maxBounds.z, point.z);
         }
+
+        // Mostrar información detallada
+        // std::cout << "\n=== Límites de la nube de puntos ===" << std::endl;
+        // std::cout << "- Límites brutos (sin padding):" << std::endl;
+        // std::cout << "  X: [" << minBounds.x << ", " << maxBounds.x << "]" << std::endl;
+        // std::cout << "  Y: [" << minBounds.y << ", " << maxBounds.y << "]" << std::endl;
+        // std::cout << "  Z: [" << minBounds.z << ", " << maxBounds.z << "]" << std::endl;
+        // std::cout << "- Rango bruto:" << std::endl;
+        // std::cout << "  ΔX: " << (maxBounds.x - minBounds.x) << " units" << std::endl;
+        // std::cout << "  ΔY: " << (maxBounds.y - minBounds.y) << " units" << std::endl;
+        // std::cout << "  ΔZ: " << (maxBounds.z - minBounds.z) << " units" << std::endl;
         
-        // Expandir límites ligeramente
+        // Aplicar padding (10% del rango o valor fijo si el rango es cero)
         float padding = 0.1f;
-        minBounds.x -= padding; minBounds.y -= padding; minBounds.z -= padding;
-        maxBounds.x += padding; maxBounds.y += padding; maxBounds.z += padding;
+        float safePaddingX = (maxBounds.x == minBounds.x) ? padding : (maxBounds.x - minBounds.x) * padding;
+        float safePaddingY = (maxBounds.y == minBounds.y) ? padding : (maxBounds.y - minBounds.y) * padding;
+        float safePaddingZ = (maxBounds.z == minBounds.z) ? padding : (maxBounds.z - minBounds.z) * padding;
+
+        minBounds.x -= safePaddingX; 
+        minBounds.y -= safePaddingY; 
+        minBounds.z -= safePaddingZ;
+        maxBounds.x += safePaddingX; 
+        maxBounds.y += safePaddingY; 
+        maxBounds.z += safePaddingZ;
+
+        // Mostrar límites con padding
+        // std::cout << "- Límites con padding (" << (padding*100) << "% del rango):" << std::endl;
+        // std::cout << "  X: [" << minBounds.x << ", " << maxBounds.x << "]" << std::endl;
+        // std::cout << "  Y: [" << minBounds.y << ", " << maxBounds.y << "]" << std::endl;
+        // std::cout << "  Z: [" << minBounds.z << ", " << maxBounds.z << "]" << std::endl;
+        // std::cout << "- Nuevo rango:" << std::endl;
+        // std::cout << "  ΔX: " << (maxBounds.x - minBounds.x) << " units" << std::endl;
+        // std::cout << "  ΔY: " << (maxBounds.y - minBounds.y) << " units" << std::endl;
+        // std::cout << "  ΔZ: " << (maxBounds.z - minBounds.z) << " units" << std::endl;
+        // std::cout << "=================================\n" << std::endl;
     }
     
     // Crear campo escalar usando distancia a la nube de puntos
@@ -602,22 +635,25 @@ public:
         
         scalarField.resize(gridResolution);
         for (int i = 0; i < gridResolution; i++) {
-            std::cout << "Punto " << i << "/" << gridResolution << std::endl;
+            //std::cout << "Punto " << i << "/" << gridResolution << std::endl;
             scalarField[i].resize(gridResolution);
             for (int j = 0; j < gridResolution; j++) {
                 scalarField[i][j].resize(gridResolution);
             }
         }
         
-        // Configurar OpenMP para usar la mitad de los procesadores
         int num_procs = omp_get_num_procs();
-        omp_set_num_threads(num_procs / 2);
-        std::cout << "Usando " << num_procs / 2 << " hilos de " << num_procs << " disponibles" << std::endl;
+        if (THREADS_TO_USE > 0) {
+            omp_set_num_threads(THREADS_TO_USE);
+        } else {
+            omp_set_num_threads(num_procs / 2);  // Mitad de los núcleos por defecto
+        }
+        std::cout << "Usando " << omp_get_max_threads() << " hilos de " << num_procs << " disponibles" << std::endl;
         
         // Calcular distancias (paralelizar el bucle exterior)
         #pragma omp parallel for
         for (int i = 0; i < gridResolution; i++) {
-            std::cout << "Distancia " << i << "/" << gridResolution << " (Hilo " << omp_get_thread_num() << ")" << std::endl;
+            //std::cout << "Distancia " << i << "/" << gridResolution << " (Hilo " << omp_get_thread_num() << ")" << std::endl;
             
             for (int j = 0; j < gridResolution; j++) {
                 for (int k = 0; k < gridResolution; k++) {
@@ -788,10 +824,14 @@ public:
 
         return Point3D(centroide_x, centroide_y, centroide_z);
     }
+
     const vector<Point3D>& getPointCloud() const
     {
         return pointCloud;
     }
+
+    Point3D getMinBounds() const { return minBounds; }
+    Point3D getMaxBounds() const { return maxBounds; }
 };
 
 // Shader simple para visualización
@@ -843,14 +883,141 @@ void main() {
 
 #include <GL/glut.h>
 
-MarchingCubes mc;
+// Estructura para almacenar una malla con su color
+struct OrganMesh {
+    MarchingCubes mc;
+    float color[3];
+    std::string name;
+    bool visible;
+    int id;
+};
+std::vector<OrganMesh> organMeshes;
+int totalOrgans = 0;
+
+const float ORGAN_COLORS[17][3] = {
+    {1.0f, 0.0f, 0.0f},     // Rojo
+    {0.0f, 1.0f, 0.0f},     // Verde
+    {0.0f, 0.0f, 1.0f},     // Azul
+    {1.0f, 1.0f, 0.0f},     // Amarillo
+    {1.0f, 0.0f, 1.0f},     // Magenta
+    {0.0f, 1.0f, 1.0f},     // Cian
+    {1.0f, 0.5f, 0.0f},     // Naranja
+    {0.5f, 0.0f, 0.5f},     // Púrpura
+    {0.5f, 0.5f, 0.0f},     // Oliva
+    {0.0f, 0.5f, 0.5f},     // Verde azulado
+    {0.5f, 0.0f, 0.0f},     // Rojo oscuro
+    {0.0f, 0.5f, 0.0f},     // Verde oscuro
+    {0.0f, 0.0f, 0.5f},     // Azul oscuro
+    {0.8f, 0.6f, 0.2f},     // Oro
+    {0.3f, 0.7f, 0.1f},     // Verde claro
+    {0.7f, 0.2f, 0.5f},     // Rosa oscuro
+    {0.2f, 0.8f, 0.8f}      // Turquesa
+};
+
 float rotX = 0, rotY = 0;
 int lastX = 0, lastY = 0;
 bool mouseLeftDown = false;
 float zoom = 30.0f;  // Valor inicial de zoom (distancia de la cámara)
 const float ZOOM_SPEED = 0.1f;  // Velocidad del zoom
 const float MIN_ZOOM = 0.1f;
-const float MAX_ZOOM = 10000.0f;
+const float MAX_ZOOM = 1000.0f;
+bool showPoints = false; // Estado inicial: visible
+
+// Función para cargar órganos desde directorio
+void loadOrganMeshes(const std::string& directory, float isoValue = 0.05f) {
+    DIR *dir;
+    struct dirent *ent;
+    std::vector<std::string> organFiles;
+    
+    if ((dir = opendir(directory.c_str())) != NULL) {
+        while ((ent = readdir(dir)) != NULL) {
+            std::string filename = ent->d_name;
+            if (filename.size() > 4 && filename.substr(filename.size() - 4) == ".xyz") {
+                organFiles.push_back(filename);
+            }
+        }
+        closedir(dir);
+        
+        // Ordenar alfabéticamente para consistencia
+        std::sort(organFiles.begin(), organFiles.end());
+        
+        // Verificar si hay archivos
+        if (organFiles.empty()) {
+            std::cerr << "Error: No se encontraron archivos .xyz en el directorio." << std::endl;
+            exit(1);
+        }
+
+        // Mensaje informativo
+        std::cout << "Se encontraron " << organFiles.size() 
+                  << " archivos de órganos (de un máximo de 17)" << std::endl;
+        
+        // Procesar cada archivo
+        for (size_t i = 0; i < organFiles.size() && i < 17; i++) {
+            OrganMesh om;
+            om.id = i + 1;
+            om.name = organFiles[i].substr(0, organFiles[i].size() - 4);
+            om.visible = true;
+            
+            // Asignar color de la paleta (cicla si hay más de 17)
+            for (int j = 0; j < 3; j++) {
+                om.color[j] = ORGAN_COLORS[i % 17][j];
+            }
+            
+            std::string fullpath = directory + "/" + organFiles[i];
+            std::cout << "\n=== ORGANO 1 ===" << std::endl;
+            std::cout << "Procesando órgano " << om.id << ": " << om.name << std::endl;
+            om.mc.process(fullpath, isoValue);
+            std::cout << "=================================\n" << std::endl;
+
+            organMeshes.push_back(om);
+        }
+
+        totalOrgans = organMeshes.size();
+        
+        std::cout << "\n=== RESUMEN ===" << std::endl;
+        std::cout << "Órganos cargados: " << totalOrgans << "/17" << std::endl;
+        for (const auto& om : organMeshes) {
+            std::cout << "Órgano " << om.id << ": " << om.name 
+                      << " - Triángulos: " << om.mc.getTriangles().size() << std::endl;
+        }
+    } else {
+        std::cerr << "Error: No se pudo abrir el directorio " << directory << std::endl;
+        exit(1);
+    }
+}
+
+// Función para mostrar información de los órganos
+void printOrganInfo() {
+    std::cout << "\n=== ÓRGANOS CARGADOS ===" << std::endl;
+    for (const auto& om : organMeshes) {
+        std::cout << "ID: " << om.id << " | Nombre: " << om.name 
+                  << " | Visible: " << (om.visible ? "Sí" : "No")
+                  << " | Color: (" << om.color[0] << ", " 
+                  << om.color[1] << ", " << om.color[2] << ")" << std::endl;
+    }
+}
+
+void calculateGlobalBounds(Point3D& globalMin, Point3D& globalMax) {
+    if (organMeshes.empty()) return;
+
+    // Inicializar con los límites del primer órgano
+    globalMin = organMeshes[0].mc.getMinBounds();
+    globalMax = organMeshes[0].mc.getMaxBounds();
+
+    // Expandir los límites con los demás órganos
+    for (const auto& om : organMeshes) {
+        Point3D currMin = om.mc.getMinBounds();
+        Point3D currMax = om.mc.getMaxBounds();
+
+        globalMin.x = std::min(globalMin.x, currMin.x);
+        globalMin.y = std::min(globalMin.y, currMin.y);
+        globalMin.z = std::min(globalMin.z, currMin.z);
+
+        globalMax.x = std::max(globalMax.x, currMax.x);
+        globalMax.y = std::max(globalMax.y, currMax.y);
+        globalMax.z = std::max(globalMax.z, currMax.z);
+    }
+}
 
 // Función para inicializar OpenGL
 void initGL() {
@@ -880,9 +1047,9 @@ void display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glLoadIdentity();
     
-    // Configurar vista con zoom, apuntando al centroide
-    gluLookAt(meshCentroid.x, meshCentroid.y, meshCentroid.z + zoom, 
-              meshCentroid.x, meshCentroid.y, meshCentroid.z, 
+    // Vista centrada en el centroide global
+    gluLookAt(meshCentroid.x, meshCentroid.y, meshCentroid.z + zoom,
+              meshCentroid.x, meshCentroid.y, meshCentroid.z,
               0, 1, 0);
     
     // Aplicar rotaciones alrededor del centroide
@@ -909,58 +1076,40 @@ void display() {
     glVertex3f(meshCentroid.x, meshCentroid.y, meshCentroid.z + 1.0f);
     glEnd();
     
-    // Dibujar la malla generada
-    glColor3f(0.2f, 0.2f, 0.8f);
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL); 
-    glBegin(GL_TRIANGLES);
-    const std::vector<Triangle>& triangles = mc.getTriangles();
-    for (const Triangle& tri : triangles) {
-        // Calcular normal para cada triángulo
-        Point3D v1 = tri.vertices[1] - tri.vertices[0];
-        Point3D v2 = tri.vertices[2] - tri.vertices[0];
-        Point3D normal = v1.cross(v2).normalized();
+    // Dibujar todos los órganos visibles
+    for (const auto& om : organMeshes) {
+        if (!om.visible) continue;
         
-        glNormal3f(normal.x, normal.y, normal.z);
+        glColor3fv(om.color);
+        glBegin(GL_TRIANGLES);
         
-        for (int i = 0; i < 3; i++) {
-            glVertex3f(tri.vertices[i].x, tri.vertices[i].y, tri.vertices[i].z);
+        const auto& triangles = om.mc.getTriangles();
+        for (const auto& tri : triangles) {
+            // Calcular normal
+            Point3D v1 = tri.vertices[1] - tri.vertices[0];
+            Point3D v2 = tri.vertices[2] - tri.vertices[0];
+            Point3D normal = v1.cross(v2).normalized();
+            
+            glNormal3f(normal.x, normal.y, normal.z);
+            for (int i = 0; i < 3; i++) {
+                glVertex3f(tri.vertices[i].x, tri.vertices[i].y, tri.vertices[i].z);
+            }
         }
+        
+        // Dibujar puntos si están activos (para este órgano)
+        if (showPoints) {
+            glDisable(GL_LIGHTING);  // Desactiva iluminación para puntos
+            glPointSize(1.0f);
+            glBegin(GL_POINTS);
+            for (const Point3D& p : om.mc.getPointCloud()) {
+                glColor3f(om.color[0]*0.6f, om.color[1]*0.6f, om.color[2]*0.6f); // Versión oscura del color
+                glVertex3f(p.x, p.y, p.z);
+            }
+            glEnd();
+            glEnable(GL_LIGHTING);   // Reactiva iluminación
+        }
+        else glEnd();
     }
-    glEnd();
-
-    glBegin(GL_QUADS);
-        glColor3f(0.2f, 0.2f, 0.8f); // Azul para visibilidad
-        glNormal3f(0.0f, 0.0f, 1.0f);
-        glVertex3f(240.422f, 151.651f, 9.61567f); // -1.25 en x, y
-        glVertex3f(243.922f, 151.651f, 9.61567f); // +1.25 en x
-        glVertex3f(243.922f, 154.151f, 9.61567f); // +1.25 en y
-        glVertex3f(240.422f, 154.151f, 9.61567f); // -1.25 en x, +1.25 en y
-    glEnd();
-    
-    float minY = std::numeric_limits<float>::max();
-    float maxY = std::numeric_limits<float>::lowest();
-
-    for (const Point3D& p : mc.getPointCloud()) {
-        if (p.y < minY) minY = p.y;
-        if (p.y > maxY) maxY = p.y;
-    }
-    glPointSize(3.0f); // Tamaño de los puntos (ajustable)
-    glBegin(GL_POINTS);
-
-    for (const Point3D& p : mc.getPointCloud()) {
-        float t = (p.y - minY) / (maxY - minY); // Normaliza entre 0 y 1
-
-        // Degradado azul → rojo (puedes ajustar estos colores como gustes)
-        float r = t;         // rojo más alto
-        float g = 0.0f;
-        float b = 1.0f - t;  // azul más bajo
-
-        glColor3f(r, g, b);      // Color según altura
-        glVertex3f(p.x, p.y, p.z); // Posición del punto
-    }
-
-    glEnd();
-
     
     glutSwapBuffers();
 }
@@ -979,9 +1128,30 @@ void keyboard(unsigned char key, int x, int y) {
             zoom = 3.0f;  // Reset zoom
             rotX = rotY = 0;  // Reset rotation
             break;
-        case 27:  // Tecla ESC
-            exit(0);
+        case 'p': // Tecla 'P' para toggle puntos
+            showPoints = !showPoints;
+            std::cout << "Puntos " << (showPoints ? "VISIBLES" : "OCULTOS") << std::endl;
             break;
+        case 'i': printOrganInfo(); break;
+        case 'v': 
+            for (auto& om : organMeshes) {
+                om.visible = !om.visible;
+            }
+            std::cout << "Todos los órganos " << (organMeshes[0].visible ? "visibles" : "ocultos") << std::endl;
+            break;
+        case '1'...'9':
+        case 'a'...'g': { // Teclas 1-9 y a-g para 17 órganos
+            int organId = (key >= 'a') ? (key - 'a' + 10) : (key - '1' + 1);
+            if (organId <= totalOrgans) {
+                organMeshes[organId-1].visible = !organMeshes[organId-1].visible;
+                std::cout << "Órgano " << organId << " (" << organMeshes[organId-1].name 
+                      << ") " << (organMeshes[organId-1].visible ? "visible" : "oculto") << std::endl;
+            } else {
+                std::cout << "No existe el órgano " << organId << std::endl;
+            }
+                break;
+            }
+        case 27: exit(0); break;
     }
     
     zoom = std::max(MIN_ZOOM, std::min(zoom, MAX_ZOOM));
@@ -990,22 +1160,29 @@ void keyboard(unsigned char key, int x, int y) {
 
 // Función para manejar el redimensionamiento de la ventana
 void reshape(int w, int h) {
+    // Calcular límites globales de todos los órganos
+    Point3D globalMin, globalMax;
+    calculateGlobalBounds(globalMin, globalMax);
+
     glViewport(0, 0, w, h);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
+    
     float aspect = (float)w / (float)h;
     
-    // Usar gluPerspective o glOrtho según prefieras
-    gluPerspective(45.0f, aspect, 1.0f, 100.0f);
+    // Calcular el tamaño de la escena basado en los límites globales
+    float sceneSizeX = globalMax.x - globalMin.x;
+    float sceneSizeY = globalMax.y - globalMin.y;
+    float sceneSizeZ = globalMax.z - globalMin.z;
+    float sceneSize = std::max({sceneSizeX, sceneSizeY, sceneSizeZ});
     
-    // Alternativa con glOrtho para vista más plana
-    // float zoomFactor = zoom;
-    // glOrtho(-zoomFactor*aspect, zoomFactor*aspect, 
-    //         -zoomFactor, zoomFactor, 
-    //         0.1f, 100.0f);
+    // Ajustar planos near/far dinámicamente
+    float nearPlane = 0.1f * sceneSize;  // 10% del tamaño de la escena
+    float farPlane = 10.0f * sceneSize;  // 10 veces el tamaño para seguridad
+    
+    gluPerspective(45.0, aspect, nearPlane, farPlane);
     
     glMatrixMode(GL_MODELVIEW);
-    //glLoadIdentity();
 }
 
 // Función para manejar eventos del mouse
@@ -1035,18 +1212,48 @@ void mouseMotion(int x, int y) {
 // Función principal
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::cerr << "Uso: " << argv[0] << " <archivo.xyz> [isoValue]" << std::endl;
+        std::cerr << "Uso: " << argv[0] << " <directorio_organos> [isoValue] [gridResolution] [threads]\n"
+                  << "Controles:\n"
+                  << "  Teclas 1-9, a-g: Mostrar/ocultar órganos\n"
+                  << "  v: Mostrar/ocultar todos\n"
+                  << "  i: Mostrar información de órganos\n"
+                  << "  +/-: Zoom\n"
+                  << "  p: Visualizar puntos\n"
+                  << "  0: Reset vista\n";
         return 1;
     }
     
-    float isoValue = 0.05f;
-    if (argc > 2) {
-        isoValue = atof(argv[2]);
+    // Parámetros con valores por defecto
+    float isoValue = (argc > 2) ? atof(argv[2]) : 0.05f;
+    if (argc > 3) GRID_RESOLUTION = atoi(argv[3]);
+    if (argc > 4) THREADS_TO_USE = atoi(argv[4]);
+    
+    // Cargar órganos
+    loadOrganMeshes(argv[1], isoValue);
+    
+    // Calcular centroide global
+    if (!organMeshes.empty()) {
+        meshCentroid = Point3D(0, 0, 0);
+        for (const auto& om : organMeshes) {
+            Point3D c = om.mc.calculateCentroid();
+            meshCentroid.x += c.x;
+            meshCentroid.y += c.y;
+            meshCentroid.z += c.z;
+        }
+        meshCentroid.x /= organMeshes.size();
+        meshCentroid.y /= organMeshes.size();
+        meshCentroid.z /= organMeshes.size();
     }
-    
-    // Procesar el archivo
-    mc.process(argv[1], isoValue);
-    
+
+    Point3D globalMin, globalMax;
+    calculateGlobalBounds(globalMin, globalMax);
+    float sceneSize = std::max({
+        globalMax.x - globalMin.x, 
+        globalMax.y - globalMin.y, 
+        globalMax.z - globalMin.z
+    });
+    zoom = sceneSize * 1.5f;
+
     // Inicializar GLUT
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
