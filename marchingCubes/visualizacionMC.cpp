@@ -964,7 +964,7 @@ void loadOrganMeshes(const std::string& directory, float isoValue = 0.05f) {
             }
             
             std::string fullpath = directory + "/" + organFiles[i];
-            std::cout << "\n=== ORGANO 1 ===" << std::endl;
+            std::cout << "\n=== ORGANO " << om.id << " ===" << std::endl;
             std::cout << "Procesando órgano " << om.id << ": " << om.name << std::endl;
             om.mc.process(fullpath, isoValue);
             std::cout << "=================================\n" << std::endl;
